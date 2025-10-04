@@ -18,6 +18,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+<<<<<<< HEAD
+=======
+    "axios": "^1.12.2",
+>>>>>>> 30dfe99 (Anomaly1)
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",

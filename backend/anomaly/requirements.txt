@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-multipart
+aiofiles
+numpy
+opencv-python-headless
+pydantic
+# optional/conditional (install if you want the real detectors)
+torch           # install a matching wheel for your system (CUDA or CPU)
+onnxruntime     # for ONNX inference
+ultralytics     # for YOLOv8 / .pt models

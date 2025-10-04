@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import React, { useState } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { Link } from 'react-router-dom';
@@ -251,3 +252,100 @@ const CrimeIdentifiers = () => {
 };
 
 export default CrimeIdentifiers;
+=======
+// CrimeIdentifiers.js
+import React, { useState } from 'react';
+import UploadDropzone from '../components/UploadDropzone';
+
+export default function CrimeIdentifiers() {
+  const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [specialResult, setSpecialResult] = useState(null);
+  const [error, setError] = useState(null);
+
+  async function sendToServer(endpoint, fileToSend) {
+    setError(null);
+    setSpecialResult(null);
+    const form = new FormData();
+    form.append('file', fileToSend, fileToSend.name);
+
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || JSON.stringify(data));
+      return data;
+    } catch (err) {
+      setError(err.message || String(err));
+      return null;
+    }
+  }
+
+  async function handleUpload(fileObj) {
+    setFile(fileObj);
+    setUploading(true);
+    setResult(null);
+    setError(null);
+    setSpecialResult(null);
+
+    // 1) automatic UCF prediction via Node proxy -> FastAPI
+    const ucfResp = await sendToServer('/api/anomaly/upload', fileObj);
+    if (ucfResp) setResult(ucfResp);
+    setUploading(false);
+  }
+
+  async function runShoplifting() {
+    if (!file) return setError('No file to analyze');
+    setUploading(true);
+    const resp = await sendToServer('/api/anomaly/shoplifting', file);
+    if (resp) setSpecialResult({ type: 'shoplifting', data: resp });
+    setUploading(false);
+  }
+
+  async function runWeapon() {
+    if (!file) return setError('No file to analyze');
+    setUploading(true);
+    const resp = await sendToServer('/api/anomaly/weapon', file);
+    if (resp) setSpecialResult({ type: 'weapon', data: resp });
+    setUploading(false);
+  }
+
+  return (
+    <div style={{ maxWidth: 900, margin: '20px auto', padding: 20 }}>
+      <h2>Crime Identifiers — Anomaly Detection</h2>
+      <UploadDropzone onFile={handleUpload} />
+      {file && (
+        <div style={{ marginTop: 12 }}>
+          <strong>Selected:</strong> {file.name} ({Math.round(file.size/1024)} KB)
+        </div>
+      )}
+
+      {uploading && <div style={{ marginTop: 12 }}>Processing... please wait.</div>}
+
+      {error && <div style={{ color: 'red', marginTop: 12 }}>{error}</div>}
+
+      {result && (
+        <div style={{ marginTop: 16, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
+          <h4>Automatic (UCF) Result</h4>
+          <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(result, null, 2)}</pre>
+
+          <div style={{ marginTop: 10 }}>
+            <button onClick={runShoplifting} style={{ marginRight: 8 }}>Run Shoplifting Detection</button>
+            <button onClick={runWeapon}>Run Weapon Detection</button>
+          </div>
+        </div>
+      )}
+
+      {specialResult && (
+        <div style={{ marginTop: 16, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
+          <h4>{specialResult.type === 'shoplifting' ? 'Shoplifting' : 'Weapon'} Detection</h4>
+          <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(specialResult.data, null, 2)}</pre>
+        </div>
+      )}
+    </div>
+  );
+}
+>>>>>>> 30dfe99 (Anomaly1)
