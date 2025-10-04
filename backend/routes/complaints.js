@@ -10,6 +10,15 @@ const User = require('../models/User');
 const Notification = require('../models/Notification');
 const auth = require('../middleware/auth');
 
+const { addCase } = require('../blockchain/index'); // Blockchain interaction module
+const crypto = require('crypto');
+
+// Helper function to create SHA256 hash of complaint data
+function createDataHash(description, incidentDate, citizenId) {
+  const str = description + incidentDate.toISOString() + citizenId.toString();
+  return crypto.createHash('sha256').update(str).digest('hex');
+}
+
 // Test endpoint (no auth required)
 router.get('/test', (req, res) => {
   res.json({ msg: 'Complaints route is working' });
@@ -19,7 +28,7 @@ router.get('/test', (req, res) => {
 router.post('/test-create', async (req, res) => {
   try {
     console.log('Test complaint creation:', req.body);
-    
+
     // Test if we can create a complaint without auth
     const testComplaint = new Complaint({
       citizenId: '507f1f77bcf86cd799439011', // Dummy ObjectId
@@ -86,10 +95,10 @@ router.post('/', auth, upload.array('evidence', 5), async (req, res) => {
       files: req.files,
       user: req.user
     });
-    
+
     // Manual validation
     const { complaintType, description, location, incidentDate } = req.body;
-    
+
     if (!complaintType) {
       return res.status(400).json({ msg: 'Complaint type is required' });
     }
@@ -162,6 +171,18 @@ router.post('/', auth, upload.array('evidence', 5), async (req, res) => {
     await complaint.save();
     console.log('Complaint saved with ID:', complaint._id);
 
+    // Blockchain integration - add case reference
+    try {
+      const caseId = complaint._id.toString();
+      const dataHash = createDataHash(complaint.description, complaint.incidentDate, complaint.citizenId);
+
+      await addCase(caseId, dataHash);
+      console.log('Complaint successfully recorded on blockchain:', caseId);
+    } catch (blockchainError) {
+      console.error('Failed to record complaint on blockchain:', blockchainError);
+      // Decide if you want to fail request or just log error (logged here)
+    }
+
     // Create notification for police
     try {
       const policeUsers = await User.find({ role: 'police' });
@@ -220,6 +241,8 @@ router.post('/', auth, upload.array('evidence', 5), async (req, res) => {
   }
 });
 
+// Remaining existing routes below left unchanged ...
+
 // @route   GET /api/complaints
 // @desc    Get all complaints (filtered by role)
 // @access  Private
@@ -232,12 +255,10 @@ router.get('/', auth, async (req, res) => {
     if (user.role === 'citizen') {
       query.citizenId = req.user.id;
     } else if (user.role === 'police') {
-      // Police can see all complaints or assigned ones
       if (req.query.assigned === 'true') {
         query.assignedOfficer = req.user.id;
       }
     } else if (user.role === 'court') {
-      // Court can see complaints that have case files
       query.status = { $in: ['case_filed', 'resolved'] };
     }
 
@@ -267,7 +288,6 @@ router.get('/:id', auth, async (req, res) => {
       return res.status(404).json({ msg: 'Complaint not found' });
     }
 
-    // Check access permissions
     if (user.role === 'citizen' && complaint.citizenId._id.toString() !== req.user.id) {
       return res.status(403).json({ msg: 'Access denied' });
     }
@@ -308,7 +328,6 @@ router.put('/:id/assign', auth, [
     complaint.status = 'under_review';
     await complaint.save();
 
-    // Create notification for assigned officer
     const notification = new Notification({
       recipientId: assignedOfficer,
       recipientRole: 'police',
@@ -352,7 +371,6 @@ router.put('/:id/status', auth, [
     complaint.status = status;
     await complaint.save();
 
-    // Create notification for citizen
     const notification = new Notification({
       recipientId: complaint.citizenId,
       recipientRole: 'citizen',
