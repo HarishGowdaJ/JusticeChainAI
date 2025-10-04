@@ -1,246 +1,111 @@
-<<<<<<< HEAD
-=======
-// server.js (complete replacement)
-// Keeps all your original functionality and adds anomaly detection routes
->>>>>>> 30dfe99 (Anomaly1)
+// backend/server.js
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const path = require('path');
-<<<<<<< HEAD
-=======
 const fs = require('fs');
 const axios = require('axios');
 const multer = require('multer');
 const FormData = require('form-data');
->>>>>>> 30dfe99 (Anomaly1)
 require('dotenv').config();
 
 const connectDB = require('./config/database');
 
-// Import routes
-const authRoutes = require('./routes/auth');
-const complaintRoutes = require('./routes/complaints');
-const firRoutes = require('./routes/firs');
-const caseFileRoutes = require('./routes/casefiles');
-const notificationRoutes = require('./routes/notifications');
+// Import routes with error handling for missing files
+let authRoutes, complaintRoutes, firRoutes, caseFileRoutes, notificationRoutes;
+try { 
+  authRoutes = require('./routes/auth'); 
+} catch (e) { 
+  console.warn('auth routes missing:', e.message); 
+  authRoutes = null; 
+}
+try { 
+  complaintRoutes = require('./routes/complaints'); 
+} catch (e) { 
+  console.warn('complaint routes missing:', e.message); 
+  complaintRoutes = null; 
+}
+try { 
+  firRoutes = require('./routes/firs'); 
+} catch (e) { 
+  console.warn('firs routes missing:', e.message); 
+  firRoutes = null; 
+}
+try { 
+  caseFileRoutes = require('./routes/casefiles'); 
+} catch (e) { 
+  console.warn('casefiles routes missing:', e.message); 
+  caseFileRoutes = null; 
+}
+try { 
+  notificationRoutes = require('./routes/notifications'); 
+} catch (e) { 
+  console.warn('notification routes missing:', e.message); 
+  notificationRoutes = null; 
+}
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-<<<<<<< HEAD
     origin: process.env.CLIENT_URL || "http://localhost:3000",
-    methods: ["GET", "POST"]
-=======
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
-    methods: ['GET', 'POST']
->>>>>>> 30dfe99 (Anomaly1)
+    methods: ["GET", "POST", "OPTIONS"]
   }
 });
 
 // Connect to MongoDB
-connectDB();
+try {
+  connectDB();
+  console.log('MongoDB connection initiated');
+} catch (e) {
+  console.warn('connectDB failed - continuing:', e.message);
+}
 
 // Middleware
 app.use(cors({
-<<<<<<< HEAD
   origin: process.env.CLIENT_URL || "http://localhost:3000",
-=======
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
->>>>>>> 30dfe99 (Anomaly1)
   credentials: true
 }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Serve static files
+// Serve static files - general uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Serve anomaly detection annotated outputs
+const anomalyUploadsPath = path.join(__dirname, 'anomaly', 'uploads');
+if (!fs.existsSync(anomalyUploadsPath)) {
+  fs.mkdirSync(anomalyUploadsPath, { recursive: true });
+}
+app.use('/anomaly_uploads', express.static(anomalyUploadsPath));
 
 // Make io accessible to routes
 app.set('io', io);
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/complaints', complaintRoutes);
-app.use('/api/firs', firRoutes);
-app.use('/api/casefiles', caseFileRoutes);
-app.use('/api/notifications', notificationRoutes);
+// Mount routes if they exist
+if (authRoutes) app.use('/api/auth', authRoutes);
+if (complaintRoutes) app.use('/api/complaints', complaintRoutes);
+if (firRoutes) app.use('/api/firs', firRoutes);
+if (caseFileRoutes) app.use('/api/casefiles', caseFileRoutes);
+if (notificationRoutes) app.use('/api/notifications', notificationRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-<<<<<<< HEAD
-  res.json({ 
-    status: 'OK', 
-=======
   res.json({
     status: 'OK',
->>>>>>> 30dfe99 (Anomaly1)
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
 });
 
-<<<<<<< HEAD
-=======
-// ----------------------
-// ANOMALY DETECTION ROUTES
-// ----------------------
-// Configuration: where FastAPI listens and where Node will temporarily store uploads
-const FASTAPI_URL = process.env.FASTAPI_URL || 'http://127.0.0.1:8000';
-const ANOMALY_UPLOAD_DIR = path.join(__dirname, 'anomaly_uploads'); // backend/anomaly_uploads
-// If you prefer backend/anomaly/uploads (so uploads sit inside backend/anomaly), change as needed:
-// const ANOMALY_UPLOAD_DIR = path.join(__dirname, 'anomaly', 'uploads');
-
-if (!fs.existsSync(ANOMALY_UPLOAD_DIR)) {
-  fs.mkdirSync(ANOMALY_UPLOAD_DIR, { recursive: true });
-}
-
-// multer setup: write uploaded files into ANOMALY_UPLOAD_DIR
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, ANOMALY_UPLOAD_DIR),
-  filename: (req, file, cb) => {
-    // Simple unique filename: timestamp-random-original
-    const name = `${Date.now()}-${Math.random().toString(36).slice(2,8)}-${file.originalname}`;
-    cb(null, name);
-  }
-});
-const upload = multer({ storage });
-
-// Helper: forward a saved file to FastAPI via multipart/form-data and return FastAPI response
-async function forwardFileToFastAPI(fastApiPath, filePath, originalName, extraFields = {}) {
-  const form = new FormData();
-  form.append('file', fs.createReadStream(filePath), originalName || path.basename(filePath));
-  // append any extra fields (like conf, threshold) as string values
-  for (const [k, v] of Object.entries(extraFields)) {
-    if (v !== undefined && v !== null) form.append(k, String(v));
-  }
-
-  // Axios needs form headers
-  const headers = form.getHeaders();
-
-  // If FASTAPI is behind some auth, you can add headers here (Authorization etc.)
-  const url = `${FASTAPI_URL}${fastApiPath}`;
-
-  const response = await axios.post(url, form, {
-    headers,
-    maxContentLength: Infinity,
-    maxBodyLength: Infinity,
-    timeout: 10 * 60 * 1000 // 10 minutes, adjust if models require more
-  });
-
-  return response.data;
-}
-
-// POST /api/anomaly/upload -> forwards to FastAPI /predict
-app.post('/api/anomaly/upload', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
-    // extra fields optionally passed from client
-    const { threshold, save_txt } = req.body;
-
-    const filePath = req.file.path;
-    const originalName = req.file.originalname;
-
-    try {
-      const fastApiResp = await forwardFileToFastAPI('/predict', filePath, originalName, {
-        threshold: threshold || undefined,
-        save_txt: save_txt || undefined
-      });
-
-      // Optionally delete file after FastAPI responded
-      try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
-
-      return res.json(fastApiResp);
-    } catch (err) {
-      // If axios forwarded an error, include helpful information
-      console.error('Error forwarding to FastAPI /predict:', err && err.response ? err.response.data || err.response.statusText : err.message || err);
-      // Clean up file
-      try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
-
-      return res.status(500).json({ error: 'FastAPI /predict failed', details: err && err.response ? err.response.data : (err.message || String(err)) });
-    }
-  } catch (err) {
-    console.error('/api/anomaly/upload error:', err);
-    return res.status(500).json({ error: 'Server error', details: err.message || String(err) });
-  }
-});
-
-// POST /api/anomaly/shoplifting -> forwards to FastAPI /predict/shoplifting
-app.post('/api/anomaly/shoplifting', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
-    const { conf, save_txt } = req.body;
-    const filePath = req.file.path;
-    const originalName = req.file.originalname;
-
-    try {
-      const fastApiResp = await forwardFileToFastAPI('/predict/shoplifting', filePath, originalName, {
-        conf: conf || undefined,
-        save_txt: save_txt || undefined
-      });
-
-      try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
-
-      return res.json(fastApiResp);
-    } catch (err) {
-      console.error('Error forwarding to FastAPI /predict/shoplifting:', err && err.response ? err.response.data || err.response.statusText : err.message || err);
-      try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
-      return res.status(500).json({ error: 'FastAPI /predict/shoplifting failed', details: err && err.response ? err.response.data : (err.message || String(err)) });
-    }
-  } catch (err) {
-    console.error('/api/anomaly/shoplifting error:', err);
-    return res.status(500).json({ error: 'Server error', details: err.message || String(err) });
-  }
-});
-
-// POST /api/anomaly/weapon -> forwards to FastAPI /predict/weapon
-app.post('/api/anomaly/weapon', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
-    const { conf, save_txt } = req.body;
-    const filePath = req.file.path;
-    const originalName = req.file.originalname;
-
-    try {
-      const fastApiResp = await forwardFileToFastAPI('/predict/weapon', filePath, originalName, {
-        conf: conf || undefined,
-        save_txt: save_txt || undefined
-      });
-
-      try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
-
-      return res.json(fastApiResp);
-    } catch (err) {
-      console.error('Error forwarding to FastAPI /predict/weapon:', err && err.response ? err.response.data || err.response.statusText : err.message || err);
-      try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
-      return res.status(500).json({ error: 'FastAPI /predict/weapon failed', details: err && err.response ? err.response.data : (err.message || String(err)) });
-    }
-  } catch (err) {
-    console.error('/api/anomaly/weapon error:', err);
-    return res.status(500).json({ error: 'Server error', details: err.message || String(err) });
-  }
-});
-// ----------------------
-// End anomaly routes
-// ----------------------
-
->>>>>>> 30dfe99 (Anomaly1)
 // Socket.io connection handling
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   // Join user to role-based room
   socket.on('join', (userData) => {
-<<<<<<< HEAD
     if (userData.role) {
-=======
-    if (userData && userData.role) {
->>>>>>> 30dfe99 (Anomaly1)
       socket.join(userData.role);
       console.log(`User ${socket.id} joined ${userData.role} room`);
     }
@@ -263,21 +128,12 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle typing indicators (for future chat features)
+  // Handle typing indicators
   socket.on('typing', (data) => {
-<<<<<<< HEAD
     socket.broadcast.to(data.room).emit('user-typing', {
       userId: data.userId,
       isTyping: data.isTyping
     });
-=======
-    if (data && data.room) {
-      socket.broadcast.to(data.room).emit('user-typing', {
-        userId: data.userId,
-        isTyping: data.isTyping
-      });
-    }
->>>>>>> 30dfe99 (Anomaly1)
   });
 
   // Handle disconnect
@@ -286,19 +142,210 @@ io.on('connection', (socket) => {
   });
 });
 
+// ==================== ANOMALY DETECTION ENDPOINTS ====================
+
+// Multer setup for temporary file uploads
+const tempUploadDir = path.join(__dirname, 'tmp_uploads');
+if (!fs.existsSync(tempUploadDir)) {
+  fs.mkdirSync(tempUploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, tempUploadDir),
+  filename: (req, file, cb) => {
+    const safeName = `${Date.now()}_${file.originalname.replace(/[^a-z0-9.\-_]/gi, '_')}`;
+    cb(null, safeName);
+  }
+});
+const upload = multer({ storage });
+
+// Helper: Forward file to FastAPI endpoint
+async function forwardFileToFastAPI(fastapiUrl, filePath, originalName) {
+  const form = new FormData();
+  form.append('file', fs.createReadStream(filePath), { filename: originalName });
+
+  const headers = form.getHeaders();
+  const resp = await axios.post(fastapiUrl, form, {
+    headers,
+    responseType: 'stream',
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
+    timeout: 120000
+  });
+  return resp;
+}
+
+// Helper: Stream axios response to express response
+function streamAxiosResponseToExpress(axiosResp, expressRes) {
+  const contentType = axiosResp.headers['content-type'] || 'application/octet-stream';
+  expressRes.setHeader('content-type', contentType);
+  
+  if (axiosResp.headers['content-length']) {
+    expressRes.setHeader('content-length', axiosResp.headers['content-length']);
+  }
+  if (axiosResp.headers['content-disposition']) {
+    expressRes.setHeader('content-disposition', axiosResp.headers['content-disposition']);
+  }
+
+  axiosResp.data.pipe(expressRes);
+}
+
+// POST /api/anomaly/upload -> Forward to FastAPI /predict
+app.post('/api/anomaly/upload', upload.single('file'), async (req, res) => {
+  try {
+    const fastapi = process.env.FASTAPI_URL || process.env.FASTAPI_BASE || 'http://127.0.0.1:8000';
+    const target = `${fastapi.replace(/\/$/, '')}/predict`;
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('Forwarding upload to FastAPI /predict:', req.file.path);
+    const fastResp = await forwardFileToFastAPI(target, req.file.path, req.file.originalname);
+
+    const contentType = (fastResp.headers['content-type'] || '').toLowerCase();
+    if (contentType.includes('application/json') || contentType.includes('text/')) {
+      const chunks = [];
+      for await (const chunk of fastResp.data) chunks.push(chunk);
+      const text = Buffer.concat(chunks).toString('utf8');
+      
+      try {
+        const json = JSON.parse(text);
+        res.status(fastResp.status).json(json);
+      } catch (e) {
+        res.status(fastResp.status).send(text);
+      }
+    } else {
+      streamAxiosResponseToExpress(fastResp, res);
+    }
+  } catch (err) {
+    console.error('Error forwarding /api/anomaly/upload:', err.message || err);
+    res.status(500).json({ error: err.message || String(err) });
+  } finally {
+    if (req.file && req.file.path) {
+      try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ }
+    }
+  }
+});
+
+// POST /api/anomaly/weapon -> Forward to FastAPI weapon detection
+app.post('/api/anomaly/weapon', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    const fastapi = process.env.FASTAPI_URL || process.env.FASTAPI_BASE || 'http://127.0.0.1:8000';
+    const candidates = [
+      `${fastapi.replace(/\/$/, '')}/predict/weapon`,
+      `${fastapi.replace(/\/$/, '')}/predict?task=weapon`,
+      `${fastapi.replace(/\/$/, '')}/predict`
+    ];
+    
+    let lastErr = null;
+    for (const target of candidates) {
+      try {
+        console.log(`Proxying /api/anomaly/weapon -> ${target}`);
+        const fastResp = await forwardFileToFastAPI(target, req.file.path, req.file.originalname);
+
+        const ct = (fastResp.headers['content-type'] || '').toLowerCase();
+        if (ct.includes('application/json') || ct.includes('text/')) {
+          const chunks = [];
+          for await (const chunk of fastResp.data) chunks.push(chunk);
+          const text = Buffer.concat(chunks).toString('utf8');
+          
+          try {
+            const json = JSON.parse(text);
+            res.status(fastResp.status).json(json);
+          } catch (e) {
+            res.status(fastResp.status).send(text);
+          }
+          return;
+        } else {
+          streamAxiosResponseToExpress(fastResp, res);
+          return;
+        }
+      } catch (err) {
+        console.warn('Forward attempt failed for', target, err.message || err);
+        lastErr = err;
+      }
+    }
+    
+    console.error('All forward attempts failed for weapon:', lastErr && lastErr.message);
+    res.status(502).json({ error: 'All backend attempts failed', info: lastErr && lastErr.message });
+  } catch (err) {
+    console.error('Error in /api/anomaly/weapon:', err);
+    res.status(500).json({ error: err.message || String(err) });
+  } finally {
+    if (req.file && req.file.path) {
+      try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ }
+    }
+  }
+});
+
+// POST /api/anomaly/shoplifting -> Forward to FastAPI shoplifting detection
+app.post('/api/anomaly/shoplifting', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    const fastapi = process.env.FASTAPI_URL || process.env.FASTAPI_BASE || 'http://127.0.0.1:8000';
+    const candidates = [
+      `${fastapi.replace(/\/$/, '')}/predict/shoplifting`,
+      `${fastapi.replace(/\/$/, '')}/predict?task=shoplifting`,
+      `${fastapi.replace(/\/$/, '')}/predict`
+    ];
+    
+    let lastErr = null;
+    for (const target of candidates) {
+      try {
+        console.log(`Proxying /api/anomaly/shoplifting -> ${target}`);
+        const fastResp = await forwardFileToFastAPI(target, req.file.path, req.file.originalname);
+
+        const ct = (fastResp.headers['content-type'] || '').toLowerCase();
+        if (ct.includes('application/json') || ct.includes('text/')) {
+          const chunks = [];
+          for await (const chunk of fastResp.data) chunks.push(chunk);
+          const text = Buffer.concat(chunks).toString('utf8');
+          
+          try {
+            const json = JSON.parse(text);
+            res.status(fastResp.status).json(json);
+          } catch (e) {
+            res.status(fastResp.status).send(text);
+          }
+          return;
+        } else {
+          streamAxiosResponseToExpress(fastResp, res);
+          return;
+        }
+      } catch (err) {
+        console.warn('Forward attempt failed for', target, err.message || err);
+        lastErr = err;
+      }
+    }
+    
+    console.error('All forward attempts failed for shoplifting:', lastErr && lastErr.message);
+    res.status(502).json({ error: 'All backend attempts failed', info: lastErr && lastErr.message });
+  } catch (err) {
+    console.error('Error in /api/anomaly/shoplifting:', err);
+    res.status(500).json({ error: err.message || String(err) });
+  } finally {
+    if (req.file && req.file.path) {
+      try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ }
+    }
+  }
+});
+
+// ==================== ERROR HANDLING ====================
+
 // Error handling middleware
 app.use((err, req, res, next) => {
-<<<<<<< HEAD
   console.error(err.stack);
-  res.status(500).json({ 
-    msg: 'Something went wrong!',
-    error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
-=======
-  console.error(err && err.stack ? err.stack : err);
   res.status(500).json({
     msg: 'Something went wrong!',
-    error: process.env.NODE_ENV === 'development' ? (err && err.message ? err.message : String(err)) : 'Internal server error'
->>>>>>> 30dfe99 (Anomaly1)
+    error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
   });
 });
 
@@ -307,16 +354,15 @@ app.use('*', (req, res) => {
   res.status(404).json({ msg: 'Route not found' });
 });
 
-const PORT = process.env.PORT || 5000;
+// ==================== SERVER STARTUP ====================
 
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-<<<<<<< HEAD
-=======
-  console.log(`FastAPI URL: ${FASTAPI_URL}`);
-  console.log(`Anomaly uploads dir: ${ANOMALY_UPLOAD_DIR}`);
->>>>>>> 30dfe99 (Anomaly1)
+  const fastapi = process.env.FASTAPI_URL || process.env.FASTAPI_BASE || 'http://127.0.0.1:8000';
+  console.log(`FastAPI URL: ${fastapi}`);
+  console.log(`Anomaly uploads dir: ${anomalyUploadsPath}`);
 });
 
 // Graceful shutdown
